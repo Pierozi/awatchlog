@@ -1,0 +1,7 @@
+/Cargo.lock
+/target/
+**/*.rs.bk
+.idea
+tests/**/*.log
+tests/rust/credentials.toml
+tests/rust/config.toml

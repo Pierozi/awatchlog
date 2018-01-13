@@ -1,0 +1,10 @@
+#!/bin/bash
+
+file=$1
+
+for((;;)) do
+  date=`date +'%b %m %H:%M:%S'`
+  entropy=`openssl rand -base64 24`
+  echo "$date : $entropy" >> $file
+  sleep 2
+done

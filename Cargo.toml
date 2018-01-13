@@ -1,0 +1,29 @@
+[package]
+name = "awatchlog"
+version = "0.1.0"
+authors = ["Pierre Tomasina <tomasinap@gmail.com>"]
+license = "BSD-3-Clause"
+exclude = ["tests/**/*", "target"]
+include = ["src/**/*", "Cargo.toml"]
+publish = false
+
+[dependencies]
+rusoto_core = "0.30.0"
+rusoto_credential = "0.9.2"
+rusoto_logs = "0.30.0"
+chrono = "0.4.0"
+getopts = "0.2.15"
+toml = "~0.4.0"
+serde = "1.0"
+serde_derive = "1.0.24"
+hyper = "0.10.13"
+shuteye = "0.3.3"
+
+[[bin]]
+name = "awatchlog"
+path = "bin/main.rs"
+doc = false
+
+[lib]
+name = "awatchlog"
+path = "src/awatchlog.rs"
