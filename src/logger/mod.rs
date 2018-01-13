@@ -138,7 +138,7 @@ fn read_file(file_name: &String, offset: &mut u64) -> String {
     };
 
     let mut buffer = [0; 1028];
-    let content: String;
+    let mut content: String;
 
     // TODO what happen if we read more than 1028, blocked stream or not?
     // TODO what happen if eof
@@ -148,6 +148,10 @@ fn read_file(file_name: &String, offset: &mut u64) -> String {
         Ok(n) => {
             *offset += n as u64;
             content = str::from_utf8(&buffer[..n]).unwrap().to_string();
+
+            if let Some(line_feed_offset) = content.rfind("\n") {
+                content.truncate(line_feed_offset);
+            }
             
             println!("the size of content file {} are : {}", path_display, n);
             println!("the offset are now at : {}", offset);
