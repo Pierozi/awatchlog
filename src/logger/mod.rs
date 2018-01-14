@@ -46,6 +46,7 @@ use rusoto_logs::{
     CreateLogStreamRequest,
     InputLogEvent,
     PutLogEventsRequest,
+    PutLogEventsError,
 };
 
 pub fn watch<C: CloudWatchLogs>(log_file: ConfigLogFile, client: &C) {
@@ -201,8 +202,20 @@ fn put_log_events<C: CloudWatchLogs>(
 
     return match result_log {
         Err(why) => {
-            println!("Put Log event have failed: {}", why.description());
-            None
+            match why {
+                PutLogEventsError::InvalidSequenceToken(cause) => {
+                    let pat = "expected sequenceToken is: ";
+                    match cause.find(pat) {
+                        None => None,
+                        Some(position) => {
+                            Some(cause.get(pat.len() + position..).unwrap().to_string())
+                        },
+                    }
+                },
+                _ => {
+                    panic!("Put Log event have failed: {}", why.description());
+                },
+            }
         },
         Ok(response) => {
             let token: String = response.next_sequence_token.unwrap();
