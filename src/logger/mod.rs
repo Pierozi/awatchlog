@@ -49,7 +49,7 @@ use rusoto_logs::{
     PutLogEventsError,
 };
 
-pub fn watch<C: CloudWatchLogs>(log_file: ConfigLogFile, client: &C) {
+pub fn watch(log_file: ConfigLogFile, client: &Box<CloudWatchLogs>) {
     println!("File: {}", log_file.file);
     println!("Group name: {}", log_file.log_group_name);
     println!("Stream Name: {}", log_file.log_stream_name);
@@ -63,7 +63,7 @@ pub fn watch<C: CloudWatchLogs>(log_file: ConfigLogFile, client: &C) {
 }
 
 /// Consumer is the method used to read from file and
-fn consumer<C: CloudWatchLogs>(log_file: &ConfigLogFile, client: &C)
+fn consumer(log_file: &ConfigLogFile, client: &Box<CloudWatchLogs>)
 {
     let mut token: Option<String> = None;
     let mut offset: u64 = 0;
@@ -90,7 +90,7 @@ fn consumer<C: CloudWatchLogs>(log_file: &ConfigLogFile, client: &C)
     }
 }
 
-fn create_group<C: CloudWatchLogs>(log_group_name: &String, client: &C) {
+fn create_group(log_group_name: &String, client: &Box<CloudWatchLogs>) {
     let log_group_request: CreateLogGroupRequest = CreateLogGroupRequest {
         log_group_name: log_group_name.to_owned(),
         tags: None,
@@ -105,10 +105,10 @@ fn create_group<C: CloudWatchLogs>(log_group_name: &String, client: &C) {
     }
 }
 
-fn create_stream<C: CloudWatchLogs>(
+fn create_stream(
     log_group_name: &String,
     log_stream_name: &String,
-    client: &C
+    client: &Box<CloudWatchLogs>
 ) {
     let log_stream_request: CreateLogStreamRequest = CreateLogStreamRequest {
         log_group_name: log_group_name.to_owned(),
@@ -167,12 +167,12 @@ fn read_file(file_name: &String, offset: &mut u64) -> String {
 // sequence_token to avoid duplication log or data loss if agent restart
 // And also maybe replace message by vector to reduce the HTTP call and
 // increase performance on high rate log stream.
-fn put_log_events<C: CloudWatchLogs>(
+fn put_log_events(
     message: &String,
     log_group_name: &String,
     log_stream_name: &String,
     token: Option<String>,
-    client: &C
+    client: &Box<CloudWatchLogs>
 ) -> Option<String> {
     let utc: DateTime<Utc> = Utc::now();
     let tz_milliseconds: i64 = utc.timestamp() * 1000;
