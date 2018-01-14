@@ -40,6 +40,7 @@ extern crate rusoto_logs;
 extern crate rusoto_core;
 
 use std::str::FromStr;
+use std::thread;
 use rusoto_credential::{DefaultCredentialsProvider};
 use rusoto_core::{default_tls_client, Region};
 use rusoto_logs::{
@@ -64,34 +65,43 @@ pub fn run(config_file: Option<String>, credentials_file: Option<String>) {
         Err(_) => Region::UsEast1,
     };
 
-    match credentials::parse(credentials_file) {
-        None => {
-            let credentials = DefaultCredentialsProvider::new().unwrap();
-            let client = CloudWatchLogsClient::new(
-                default_tls_client().unwrap(),
-                credentials,
-                region
-            );
-            worker(config, client);
-        },
-        Some(credentials) => {
-            let client = CloudWatchLogsClient::new(
-                default_tls_client().unwrap(),
-                credentials,
-                region
-            );
-            worker(config, client);
-        },
-    }
-}
-
-fn worker<C: CloudWatchLogs>(config: AwatchLogConfig, client: C) {
     // TODO check if pid already up
     println!("PID FILE: {}", config.general.pid_file);
 
-    // TODO loop over config.logfile
-    // Must thread this loop to watch multiple file in same times
+    let mut threads: Vec<std::thread::JoinHandle<_>> = vec![];
     for logfile in config.logfile {
-        logger::watch(logfile, &client);
+        let region_clone = region.clone();
+        let credentials_file_clone = credentials_file.clone();
+
+        let handle = thread::spawn(move || {
+            let client: Box<CloudWatchLogs> = get_client(region_clone, credentials_file_clone);
+            logger::watch(logfile, &client);
+        });
+
+        threads.push(handle);
+    }
+
+    for handle in threads {
+        handle.join();
+    }
+}
+
+fn get_client(region: Region, credentials_file: Option<String>) -> Box<CloudWatchLogs> {
+    return match credentials::parse(credentials_file) {
+        None => {
+            let credentials = DefaultCredentialsProvider::new().unwrap();
+            Box::new(CloudWatchLogsClient::new(
+                default_tls_client().unwrap(),
+                credentials,
+                region
+            ))
+        },
+        Some(credentials) => {
+            Box::new(CloudWatchLogsClient::new(
+                default_tls_client().unwrap(),
+                credentials,
+                region
+            ))
+        },
     }
 }
