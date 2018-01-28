@@ -141,20 +141,19 @@ fn read_file(file_name: &String, offset: &mut u64) -> String {
     let mut buffer = [0; 1028];
     let mut content: String;
 
-    // TODO what happen if we read more than 1028, blocked stream or not?
-    // TODO what happen if eof
-
     match file.read_at(&mut buffer, offset.to_owned()) {
         Err(why) => panic!("couldn't read {} : {}", path_display, why.description()),
         Ok(n) => {
-            *offset += n as u64;
             content = str::from_utf8(&buffer[..n]).unwrap().to_string();
 
             if let Some(line_feed_offset) = content.rfind("\n") {
                 content.truncate(line_feed_offset);
             }
-            
-            println!("the size of content file {} are : {}", path_display, n);
+
+            *offset += content.len() as u64;
+
+            println!("the size of content {} are : {}", path_display, n);
+            println!("the size of content truncate {} are : {}", path_display, content.len());
             println!("the offset are now at : {}", offset);
             println!("The content of file are : {:?}", content);
 
@@ -179,11 +178,13 @@ fn put_log_events(
     let mut events: Vec<InputLogEvent> = Vec::new();
 
     for line in message.lines() {
+        if line.is_empty() {
+            continue;
+        }
         let inline_event: InputLogEvent = InputLogEvent {
             message: line.to_string(),
             timestamp: tz_milliseconds, // TODO must be defined by the beginning of string parse using log_file.datetime_format
         };
-
         events.push(inline_event);
     }
 
