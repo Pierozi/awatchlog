@@ -49,7 +49,7 @@ use rusoto_logs::{
     PutLogEventsError,
 };
 
-pub fn watch<C: CloudWatchLogs>(log_file: ConfigLogFile, client: &C) {
+pub fn watch(log_file: ConfigLogFile, client: &Box<CloudWatchLogs>) {
     println!("File: {}", log_file.file);
     println!("Group name: {}", log_file.log_group_name);
     println!("Stream Name: {}", log_file.log_stream_name);
@@ -63,7 +63,7 @@ pub fn watch<C: CloudWatchLogs>(log_file: ConfigLogFile, client: &C) {
 }
 
 /// Consumer is the method used to read from file and
-fn consumer<C: CloudWatchLogs>(log_file: &ConfigLogFile, client: &C)
+fn consumer(log_file: &ConfigLogFile, client: &Box<CloudWatchLogs>)
 {
     let mut token: Option<String> = None;
     let mut offset: u64 = 0;
@@ -90,7 +90,7 @@ fn consumer<C: CloudWatchLogs>(log_file: &ConfigLogFile, client: &C)
     }
 }
 
-fn create_group<C: CloudWatchLogs>(log_group_name: &String, client: &C) {
+fn create_group(log_group_name: &String, client: &Box<CloudWatchLogs>) {
     let log_group_request: CreateLogGroupRequest = CreateLogGroupRequest {
         log_group_name: log_group_name.to_owned(),
         tags: None,
@@ -105,10 +105,10 @@ fn create_group<C: CloudWatchLogs>(log_group_name: &String, client: &C) {
     }
 }
 
-fn create_stream<C: CloudWatchLogs>(
+fn create_stream(
     log_group_name: &String,
     log_stream_name: &String,
-    client: &C
+    client: &Box<CloudWatchLogs>
 ) {
     let log_stream_request: CreateLogStreamRequest = CreateLogStreamRequest {
         log_group_name: log_group_name.to_owned(),
@@ -141,20 +141,19 @@ fn read_file(file_name: &String, offset: &mut u64) -> String {
     let mut buffer = [0; 1028];
     let mut content: String;
 
-    // TODO what happen if we read more than 1028, blocked stream or not?
-    // TODO what happen if eof
-
     match file.read_at(&mut buffer, offset.to_owned()) {
         Err(why) => panic!("couldn't read {} : {}", path_display, why.description()),
         Ok(n) => {
-            *offset += n as u64;
             content = str::from_utf8(&buffer[..n]).unwrap().to_string();
 
             if let Some(line_feed_offset) = content.rfind("\n") {
                 content.truncate(line_feed_offset);
             }
-            
-            println!("the size of content file {} are : {}", path_display, n);
+
+            *offset += content.len() as u64;
+
+            println!("the size of content {} are : {}", path_display, n);
+            println!("the size of content truncate {} are : {}", path_display, content.len());
             println!("the offset are now at : {}", offset);
             println!("The content of file are : {:?}", content);
 
@@ -167,23 +166,25 @@ fn read_file(file_name: &String, offset: &mut u64) -> String {
 // sequence_token to avoid duplication log or data loss if agent restart
 // And also maybe replace message by vector to reduce the HTTP call and
 // increase performance on high rate log stream.
-fn put_log_events<C: CloudWatchLogs>(
+fn put_log_events(
     message: &String,
     log_group_name: &String,
     log_stream_name: &String,
     token: Option<String>,
-    client: &C
+    client: &Box<CloudWatchLogs>
 ) -> Option<String> {
     let utc: DateTime<Utc> = Utc::now();
     let tz_milliseconds: i64 = utc.timestamp() * 1000;
     let mut events: Vec<InputLogEvent> = Vec::new();
 
     for line in message.lines() {
+        if line.is_empty() {
+            continue;
+        }
         let inline_event: InputLogEvent = InputLogEvent {
             message: line.to_string(),
             timestamp: tz_milliseconds, // TODO must be defined by the beginning of string parse using log_file.datetime_format
         };
-
         events.push(inline_event);
     }
 
