@@ -30,6 +30,8 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+pub mod state;
+
 use std::str;
 use std::error::Error;
 use std::fs::File;
@@ -65,28 +67,53 @@ pub fn watch(log_file: ConfigLogFile, client: &Box<CloudWatchLogs>) {
 /// Consumer is the method used to read from file and
 fn consumer(log_file: &ConfigLogFile, client: &Box<CloudWatchLogs>)
 {
+    // TODO must have the general config to set the custom states_dir
+    let states_dir: Option<String> = None;
     let mut token: Option<String> = None;
     let mut offset: u64 = 0;
 
-    // TODO update state and sequence token
+    match state::load(log_file.file.to_owned(), states_dir.to_owned()) {
+        Ok(state) => {
+            token = Some(state.token);
+            offset = state.offset;
+        },
+        Err(_) => {},
+    }
 
     loop {
-        let content: String = read_file(&log_file.file, &mut offset);
+        let mut _offset: u64 = offset;
+        let content: String = read_file(&log_file.file, &mut _offset);
 
         // TODO find log_stream in db state and last sequence_token
+        let mut delay = Duration::new(5, 0);
 
-        token = put_log_events(
+        match put_log_events(
             &content,
             &log_file.log_group_name,
             &log_file.log_stream_name,
             token,
             client
-        );
+        ) {
+            Ok(LogEventResponse) => {
+                token = LogEventResponse.token;
+                state::save(log_file.file.to_owned(), states_dir.to_owned(), state::State {
+                    token: token.to_owned().unwrap(),
+                    offset: _offset,
+                });
+
+                // Waiter in milliseconds
+                delay = Duration::new(0, 200*1000000);
+                offset = _offset;
+            },
+            Err(LogEventError) => {
+                token = LogEventError.token;
+            },
+        }
 
         // TODO pause of x ms depending of the size of vector
         println!("\n-----------------------------\n");
 
-        sleep(Duration::new(5, 0));
+        sleep(delay);
     }
 }
 
@@ -162,6 +189,13 @@ fn read_file(file_name: &String, offset: &mut u64) -> String {
     };
 }
 
+struct LogEventResponse {
+    token: Option<String>
+}
+struct LogEventError {
+    token: Option<String>
+}
+
 // We should / MUST use state file to persist the position with the latest
 // sequence_token to avoid duplication log or data loss if agent restart
 // And also maybe replace message by vector to reduce the HTTP call and
@@ -172,7 +206,7 @@ fn put_log_events(
     log_stream_name: &String,
     token: Option<String>,
     client: &Box<CloudWatchLogs>
-) -> Option<String> {
+) -> Result<LogEventResponse, LogEventError> {
     let utc: DateTime<Utc> = Utc::now();
     let tz_milliseconds: i64 = utc.timestamp() * 1000;
     let mut events: Vec<InputLogEvent> = Vec::new();
@@ -189,7 +223,7 @@ fn put_log_events(
     }
 
     if events.is_empty() {
-        return token;
+        return Ok(LogEventResponse { token });
     }
 
     let log_event_request: PutLogEventsRequest = PutLogEventsRequest {
@@ -206,14 +240,16 @@ fn put_log_events(
             match why {
                 PutLogEventsError::InvalidSequenceToken(cause) => {
                     let pat = "expected sequenceToken is: ";
-                    match cause.find(pat) {
+                    let token = match cause.find(pat) {
                         None => None,
                         Some(position) => {
                             Some(cause.get(pat.len() + position..).unwrap().to_string())
                         },
-                    }
+                    };
+                    Err(LogEventError { token })
                 },
                 _ => {
+                    // Err(LogEventError { parent_error: why, token: None })
                     panic!("Put Log event have failed: {}", why.description());
                 },
             }
@@ -222,7 +258,7 @@ fn put_log_events(
             let token: String = response.next_sequence_token.unwrap();
             println!("Put Log with success time:{}", tz_milliseconds);
             println!("Next seq token :{}", token);
-            Some(token)
+            Ok(LogEventResponse { token: Some(token) })
         },
     }
 }
