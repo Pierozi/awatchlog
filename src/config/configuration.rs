@@ -40,6 +40,7 @@ const DEFAULT_CONFIG_PATH: &'static str = "/etc/awatchlog/config.toml";
 #[derive(Deserialize)]
 pub struct ConfigGeneral {
     pub pid_file: String,
+    pub state_path: String,
     pub region: String,
 }
 
