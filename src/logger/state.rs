@@ -30,14 +30,16 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use config;
+use std::fs;
 use std::fs::File;
+use std::fs::OpenOptions;
 use std::path::Path;
 use std::io::prelude::*;
+use std::io::BufWriter;
 use serde_json;
 use sha1;
 
-const DEFAULT_STATES_PATH: &'static str = "/etc/awatchlog/credentials.toml";
+const DEFAULT_STATES_PATH: &'static str = "/var/run/awatchlog/states";
 
 #[derive(Serialize, Deserialize)]
 pub struct State {
@@ -46,8 +48,8 @@ pub struct State {
 }
 
 pub struct Error {
-    code: u64,
-    message: String,
+    pub code: u64,
+    pub message: String,
 }
 
 pub fn load(logfile: String, states_dir: Option<String>) -> Result<State, Error> {
@@ -65,13 +67,19 @@ pub fn load(logfile: String, states_dir: Option<String>) -> Result<State, Error>
 
 pub fn save(logfile: String, states_dir: Option<String>, state: State) {
     let state_path_dir = get_state_file_path(logfile, states_dir);
-    let state_path = Path::new(&state_path_dir);
     let state_json = json!(state);
-
     let json: String = state_json.to_string();
-    let mut file: File = File::open(state_path).unwrap();
 
-    file.write_all(json.as_bytes());
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(state_path_dir).unwrap();
+
+    {
+        let mut writer = BufWriter::new(file);
+        writer.write_all(json.as_bytes());
+    }
 }
 
 fn get_state_file_path(logfile: String, state: Option<String>) -> String {
@@ -85,7 +93,7 @@ fn get_state_file_path(logfile: String, state: Option<String>) -> String {
 
     if false == state_path.exists() {
         println!("States path not exists, try to create at: {}", state_path_dir);
-        match File::create(state_path) {
+        match fs::create_dir(state_path) {
             Ok(_) => {},
             Err(_) => panic!("Cannot create sates path at {}", state_path_dir)
         }

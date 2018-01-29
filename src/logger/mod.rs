@@ -77,7 +77,11 @@ fn consumer(log_file: &ConfigLogFile, client: &Box<CloudWatchLogs>)
             token = Some(state.token);
             offset = state.offset;
         },
-        Err(_) => {},
+        Err(e) => {
+            if e.code != 0 {
+                panic!("TODO Error unexpected... {}", e.message);
+            }
+        },
     }
 
     loop {
