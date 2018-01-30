@@ -39,7 +39,7 @@ use std::io::BufWriter;
 use serde_json;
 use sha1;
 
-const DEFAULT_STATES_PATH: &'static str = "/var/run/awatchlog/states";
+const DEFAULT_STATES_PATH: &'static str = "/usr/share/awatchlog/states";
 
 #[derive(Serialize, Deserialize)]
 pub struct State {
