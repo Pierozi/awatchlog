@@ -51,6 +51,9 @@ use rusoto_logs::{
     PutLogEventsError,
 };
 
+const AWS_MAX_BATCH_SIZE: u64 = 788576; // 1048576 - (10000 * 26)
+const AWS_MAX_BATCH_EVENTS: u64 = 10000;
+
 pub fn watch(log_file: ConfigLogFile, client: &Box<CloudWatchLogs>) {
     println!("File: {}", log_file.file);
     println!("Group name: {}", log_file.log_group_name);
@@ -71,6 +74,7 @@ fn consumer(log_file: &ConfigLogFile, client: &Box<CloudWatchLogs>)
     let states_dir: Option<String> = None;
     let mut token: Option<String> = None;
     let mut offset: u64 = 0;
+    let mut buffer_size: u64 = 16384;
 
     match state::load(log_file.file.to_owned(), states_dir.to_owned()) {
         Ok(state) => {
@@ -86,10 +90,44 @@ fn consumer(log_file: &ConfigLogFile, client: &Box<CloudWatchLogs>)
 
     loop {
         let mut _offset: u64 = offset;
-        let content: String = read_file(&log_file.file, &mut _offset);
-
-        // TODO find log_stream in db state and last sequence_token
+        let buf_size = buffer_size;
         let mut delay = Duration::new(5, 0);
+        let content: String = read_file(&log_file.file, &mut _offset, buf_size);
+
+        {
+            let delta: u64 = 256;
+            let content_size = content.len() as u64;
+
+            // Wait and continue loop if message empty
+            if 0 == content_size {
+                sleep(delay);
+                continue;
+            }
+
+            // Ensure the number of lines does not reach 10K limit
+            if AWS_MAX_BATCH_EVENTS <= (content.lines().size_hint().0 as u64) {
+                // Divide by 2 in order reduce drastically the size
+                // and re scale-up progressively if needs
+                buffer_size = buffer_size / 2;
+                continue;
+            }
+
+            // Reduce buffer size if lower than expected (because can be truncated)
+            if content_size < (buffer_size - delta) {
+                buffer_size = content_size - delta;
+            } else {
+                // Otherwise increase buffer size by 50%
+                buffer_size = content_size * 150 / 100;
+
+                // Ensure to not allocate more than Max batch size
+                if AWS_MAX_BATCH_SIZE < buffer_size {
+                    buffer_size = AWS_MAX_BATCH_SIZE;
+                }
+            }
+        }
+
+        println!("the buffer size are : {}", buf_size);
+        println!("the next buffer size are : {}", buffer_size);
 
         match put_log_events(
             &content,
@@ -106,7 +144,7 @@ fn consumer(log_file: &ConfigLogFile, client: &Box<CloudWatchLogs>)
                 });
 
                 // Waiter in milliseconds
-                delay = Duration::new(0, 200*1000000);
+                delay = Duration::new(0, 400*1000000);
                 offset = _offset;
             },
             Err(LogEventError) => {
@@ -160,7 +198,7 @@ fn create_stream(
 /// 
 /// The offset is relative to the start of the file and thus independent
 /// from the current cursor.
-fn read_file(file_name: &String, offset: &mut u64) -> String {
+fn read_file(file_name: &String, offset: &mut u64, buf_size: u64) -> String {
     let path = Path::new(file_name);
     let path_display = path.display();
     let file = match File::open(&path) {
@@ -169,7 +207,12 @@ fn read_file(file_name: &String, offset: &mut u64) -> String {
         Ok(file) => file,
     };
 
-    let mut buffer = [0; 1028];
+    fn new_buffer(size: u64) -> Vec<u8> {
+        vec![0; size as usize]
+    }
+
+    let mut buf_sized = new_buffer(buf_size);
+    let mut buffer = buf_sized.as_mut_slice();
     let mut content: String;
 
     match file.read_at(&mut buffer, offset.to_owned()) {
@@ -183,10 +226,10 @@ fn read_file(file_name: &String, offset: &mut u64) -> String {
 
             *offset += content.len() as u64;
 
-            println!("the size of content {} are : {}", path_display, n);
-            println!("the size of content truncate {} are : {}", path_display, content.len());
+            /*println!("the size of content {} are : {}", path_display, n);
+            println!("the size of content truncate {} are : {}", path_display, content.len());*/
             println!("the offset are now at : {}", offset);
-            println!("The content of file are : {:?}", content);
+            //println!("The content of file are : {:?}", content);
 
             return content;
         }
@@ -260,8 +303,8 @@ fn put_log_events(
         },
         Ok(response) => {
             let token: String = response.next_sequence_token.unwrap();
-            println!("Put Log with success time:{}", tz_milliseconds);
-            println!("Next seq token :{}", token);
+            /*println!("Put Log with success time:{}", tz_milliseconds);
+            println!("Next seq token :{}", token);*/
             Ok(LogEventResponse { token: Some(token) })
         },
     }
