@@ -35,11 +35,12 @@ extern crate toml;
 use std::path::Path;
 use config;
 
-const DEFAULT_CONFIG_PATH: &'static str = "/etc/awatchlog/config.toml";
+const DEFAULT_CONFIG_PATH: &'static str = "/usr/share/awatchlog/config.toml";
 
 #[derive(Deserialize)]
 pub struct ConfigGeneral {
     pub pid_file: String,
+    pub state_path: String,
     pub region: String,
 }
 

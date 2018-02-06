@@ -1,5 +1,6 @@
 [general]
-pid_file = "/var/awatchlog/rund.pid"
+pid_file = "/var/run/awatchlog/rund.pid"
+state_path = "/var/run/awatchlog/states"
 region = "eu-west-1"
 
 [[logfile]]
