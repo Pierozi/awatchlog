@@ -78,7 +78,12 @@ pub fn save(logfile: String, states_dir: Option<String>, state: State) {
 
     {
         let mut writer = BufWriter::new(file);
-        writer.write_all(json.as_bytes());
+        match writer.write_all(json.as_bytes()) {
+            Ok(_) => {},
+            Err(_) => {
+                //TODO put warning in log
+            },
+        }
     }
 }
 

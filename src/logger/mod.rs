@@ -42,7 +42,6 @@ use std::collections::HashMap;
 
 use shuteye::sleep;
 use regex::Regex;
-use regex::{Captures};
 
 use chrono::{DateTime, Utc, FixedOffset};
 use config::configuration::{ConfigLogFile};
@@ -139,8 +138,8 @@ fn consumer(log_file: &ConfigLogFile, client: &Box<CloudWatchLogs>)
             token,
             client
         ) {
-            Ok(LogEventResponse) => {
-                token = LogEventResponse.token;
+            Ok(log_event_response) => {
+                token = log_event_response.token;
                 state::save(log_file.file.to_owned(), states_dir.to_owned(), state::State {
                     token: token.to_owned().unwrap(),
                     offset: _offset,
@@ -150,8 +149,8 @@ fn consumer(log_file: &ConfigLogFile, client: &Box<CloudWatchLogs>)
                 delay = Duration::new(0, 400*1000000);
                 offset = _offset;
             },
-            Err(LogEventError) => {
-                token = LogEventError.token;
+            Err(log_event_error) => {
+                token = log_event_error.token;
             },
         }
 

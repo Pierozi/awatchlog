@@ -86,7 +86,7 @@ pub fn run(config_file: Option<String>, credentials_file: Option<String>) {
     }
 
     for handle in threads {
-        handle.join();
+        handle.join().unwrap();
     }
 }
 
