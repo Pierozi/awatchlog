@@ -37,6 +37,7 @@ extern crate serde_json;
 extern crate chrono;
 extern crate shuteye;
 extern crate sha1;
+extern crate regex;
 
 extern crate rusoto_credential;
 extern crate rusoto_logs;

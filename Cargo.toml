@@ -20,6 +20,7 @@ serde_json = "1.0.9"
 hyper = "0.10.13"
 shuteye = "0.3.3"
 sha1 = "0.4.0"
+regex =  "0.2"
 
 [[bin]]
 name = "awatchlog"
@@ -29,3 +30,4 @@ doc = false
 [lib]
 name = "awatchlog"
 path = "src/awatchlog.rs"
+test = true

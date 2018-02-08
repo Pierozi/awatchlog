@@ -49,7 +49,7 @@ pub struct ConfigLogFile {
     pub file: String,
     pub log_group_name: String,
     pub log_stream_name: String,
-    pub datetime_format: String,
+    pub datetime_format: Option<String>,
 }
 
 #[derive(Deserialize)]

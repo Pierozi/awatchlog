@@ -38,9 +38,13 @@ use std::fs::File;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::time::Duration;
-use shuteye::sleep;
+use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use shuteye::sleep;
+use regex::Regex;
+use regex::{Captures};
+
+use chrono::{DateTime, Utc, FixedOffset};
 use config::configuration::{ConfigLogFile};
 use rusoto_logs::{
     CloudWatchLogs,
@@ -58,7 +62,7 @@ pub fn watch(log_file: ConfigLogFile, client: &Box<CloudWatchLogs>) {
     println!("File: {}", log_file.file);
     println!("Group name: {}", log_file.log_group_name);
     println!("Stream Name: {}", log_file.log_stream_name);
-    println!("Datetime: {}", log_file.datetime_format);
+    println!("Datetime: {:?}", log_file.datetime_format);
 
     create_group(&log_file.log_group_name, client);
     create_stream(&log_file.log_group_name, &log_file.log_stream_name, client);
@@ -131,8 +135,7 @@ fn consumer(log_file: &ConfigLogFile, client: &Box<CloudWatchLogs>)
 
         match put_log_events(
             &content,
-            &log_file.log_group_name,
-            &log_file.log_stream_name,
+            log_file.to_owned(),
             token,
             client
         ) {
@@ -249,22 +252,28 @@ struct LogEventError {
 // increase performance on high rate log stream.
 fn put_log_events(
     message: &String,
-    log_group_name: &String,
-    log_stream_name: &String,
+    log_file: &ConfigLogFile,
     token: Option<String>,
     client: &Box<CloudWatchLogs>
 ) -> Result<LogEventResponse, LogEventError> {
-    let utc: DateTime<Utc> = Utc::now();
-    let tz_milliseconds: i64 = utc.timestamp() * 1000;
     let mut events: Vec<InputLogEvent> = Vec::new();
 
     for line in message.lines() {
         if line.is_empty() {
             continue;
         }
+        let custom_fmt: Option<String> = log_file.datetime_format.to_owned(); // TODO extract custom format from log_group config
+        let tz_milliseconds = match find_timestamp_ms_in_str(line, custom_fmt) {
+            None => {
+                let utc: DateTime<Utc> = Utc::now();
+                utc.timestamp() * 1000
+                //TODO WARNING IN LOGGER
+            },
+            Some(tz_ms) => tz_ms,
+        };
         let inline_event: InputLogEvent = InputLogEvent {
             message: line.to_string(),
-            timestamp: tz_milliseconds, // TODO must be defined by the beginning of string parse using log_file.datetime_format
+            timestamp: tz_milliseconds,
         };
         events.push(inline_event);
     }
@@ -275,8 +284,8 @@ fn put_log_events(
 
     let log_event_request: PutLogEventsRequest = PutLogEventsRequest {
         log_events: events,
-        log_group_name: log_group_name.to_owned(),
-        log_stream_name: log_stream_name.to_owned(),
+        log_group_name: log_file.log_group_name.to_owned(),
+        log_stream_name: log_file.log_stream_name.to_owned(),
         sequence_token: token,
     };
 
@@ -307,5 +316,168 @@ fn put_log_events(
             println!("Next seq token :{}", token);*/
             Ok(LogEventResponse { token: Some(token) })
         },
+    }
+}
+
+fn find_timestamp_ms_in_str(message: &str, format: Option<String>) -> Option<i64> {
+    // Try to extract date using custom format
+    let mut fmt: String = String::new();
+    let mut date: String = match format {
+        None => String::new(),
+        Some(custom_format) => {
+            fmt = custom_format;
+            match extract_datetime(message, &fmt) {
+                None => String::new(),
+                Some(date_extracted) => date_extracted,
+            }
+        },
+    };
+
+    // Try to extract date with popular datetime format
+    if date.is_empty() {
+        for fmt_item in list_common_fmt() {
+            fmt = fmt_item;
+            if let Some(date_extracted) = extract_datetime(message, &fmt) {
+                date = date_extracted;
+                break;
+            }
+        }
+    }
+
+    if date.is_empty() || fmt.is_empty() {
+        return None;
+    }
+
+    if let None = fmt.find("%Y") {
+        let year = Utc::now().format("%Y").to_string();
+        date = format!("{} {}", year.as_str(), date);
+        fmt = format!("%Y {}", fmt);
+    }
+
+    if let None = fmt.find("%z") {
+        let tz: String = FixedOffset::east(1*60*60).to_string();
+        date = format!("{} {}", date, tz.as_str());
+        fmt = format!("{} %:z", fmt);
+    }
+
+    return match DateTime::parse_from_str(&date, &fmt) {
+        Ok(datetime) => {
+            Some(datetime.timestamp() * 1000)
+        },
+        Err(_) => None
+    };
+}
+
+fn extract_datetime(message: &str, fmt: &str) -> Option<String> {
+    let mut mapping_fmt: HashMap<&str, &str> = HashMap::new();
+
+    mapping_fmt.insert("%Y", "\\d{4}");
+    mapping_fmt.insert("%C", "\\d{2}");
+    mapping_fmt.insert("%y", "\\d{2}");
+    mapping_fmt.insert("%m", "\\d{2}");
+    mapping_fmt.insert("%b", "\\w{3}");
+    mapping_fmt.insert("%B", "\\w{4}");
+    mapping_fmt.insert("%h", "\\w{3}");
+    mapping_fmt.insert("%d", "\\d{2}");
+    mapping_fmt.insert("%e", "\\s?\\d");
+    mapping_fmt.insert("%a", "\\w{3}");
+    mapping_fmt.insert("%A", "\\w{3, 10}");
+    mapping_fmt.insert("%w", "\\d");
+    mapping_fmt.insert("%u", "\\d");
+    mapping_fmt.insert("%U", "\\d{2}");
+    mapping_fmt.insert("%W", "\\d{2}");
+    mapping_fmt.insert("%G", "\\d{4}");
+    mapping_fmt.insert("%g", "\\d{2}");
+    mapping_fmt.insert("%V", "\\d{2}");
+    mapping_fmt.insert("%j", "\\d{3}");
+    mapping_fmt.insert("%D", "\\d{2}/\\d{2}/\\d{2}");
+    mapping_fmt.insert("%x", "\\d{2}/\\d{2}/\\d{2}");
+    mapping_fmt.insert("%F", "\\d{4}-\\d{2}-\\d{2}");
+    mapping_fmt.insert("%v", "\\d{2}-\\w{3}-\\d{4}");
+    mapping_fmt.insert("%H", "\\d{2}");
+    mapping_fmt.insert("%k", "\\s?\\d");
+    mapping_fmt.insert("%I", "\\d{2}");
+    mapping_fmt.insert("%l", "\\s?\\d");
+    mapping_fmt.insert("%P", "(am|pm)");
+    mapping_fmt.insert("%p", "(AM|PM)");
+    mapping_fmt.insert("%M", "\\d{2}");
+    mapping_fmt.insert("%S", "\\d{2}");
+    mapping_fmt.insert("%f", "\\d{9}");
+    mapping_fmt.insert("%.f", "\\.\\d{6}");
+    mapping_fmt.insert("%.3f", "\\.\\d{3}");
+    mapping_fmt.insert("%.6f", "\\.\\d{6}");
+    mapping_fmt.insert("%.9f", "\\.\\d{9}");
+    mapping_fmt.insert("%R", "\\d{2}:\\d{2}");
+    mapping_fmt.insert("%T", "\\d{2}:\\d{2}:\\d{2}");
+    mapping_fmt.insert("%X", "\\d{2}:\\d{2}:\\d{2}");
+    mapping_fmt.insert("%r", "\\d{2}:\\d{2}:\\d{2} (AM|PM)");
+    mapping_fmt.insert("%Z", "\\w{3,8}");
+    mapping_fmt.insert("%z", "\\+\\d{4}");
+    mapping_fmt.insert("%:z", "\\+\\d{2}:\\d{2}");
+    mapping_fmt.insert("%c", "\\w{3} \\w{3} \\s?\\d \\d{2}:\\d{2}:\\d{2} \\d{Y}");
+    mapping_fmt.insert("%+", "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}\\+\\d{2}:\\d{2}");
+    mapping_fmt.insert("%s", "\\d{9}");
+    mapping_fmt.insert("%t", "\t");
+    mapping_fmt.insert("%%", "%");
+
+    let mut fmt_pattern: String = fmt.to_string();
+
+    for (key, value) in mapping_fmt.iter() {
+        fmt_pattern = fmt_pattern.replace(key, value);
+    }
+
+    let pattern: String = format!(r"(?i)({})", fmt_pattern);
+    let regex: Regex = Regex::new(&pattern).unwrap();
+
+    match regex.captures(message) {
+        None => None,
+        Some(cap) => Some(cap[0].to_string()),
+    }
+}
+
+fn list_common_fmt() -> Vec<String> {
+    vec![
+        "%b %d %H:%M:%S".to_string(), // Syslog
+        "%Y/%m/%d %H:%M:%S".to_string(), // Nginx Error
+        "%a %b %d %H:%M:%S %Y".to_string(), // Apache Error
+        "%d/%b/%Y:%H:%M:%S %z".to_string(), // Access log (nginx / apache)
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn case_find_timestamp_ms_in_str() {
+        // Syslog
+        assert_eq!(find_timestamp_ms_in_str("Jan 01 16:34:44", Some("%b %d %H:%M:%S".to_string())).unwrap(), 1514820884000 as i64);
+        // Nginx Error log
+        assert_eq!(find_timestamp_ms_in_str("2018/02/08 13:08:48", Some("%Y/%m/%d %H:%M:%S".to_string())).unwrap(), 1518091728000 as i64);
+        // Nginx Access log
+        assert_eq!(find_timestamp_ms_in_str("08/Feb/2018:11:18:16 +0100", Some("%d/%b/%Y:%H:%M:%S %z".to_string())).unwrap(), 1518085096000 as i64);
+        // Apache Error log
+        let apache_error_payload = "[Thu Feb 08 14:32:52 2018] [error] [client 127.0.0.1] client denied by server configuration: /export/home/live/ap/htdocs/test";
+        assert_eq!(find_timestamp_ms_in_str(apache_error_payload, Some("%a %b %d %H:%M:%S %Y".to_string())).unwrap(), 1518096772000 as i64);
+
+        let nginx_access_payload = "198.50.136.9 - - [08/Feb/2018:11:18:16 +0100] \"GET /w00tw00t.at.ISC.SANS.DFind:) HTTP/1.1\" 400 166 \"-\" \"-\"";
+        assert_eq!(find_timestamp_ms_in_str(nginx_access_payload, Some("%d/%b/%Y:%H:%M:%S %z".to_string())).unwrap(), 1518085096000 as i64);
+
+        assert_eq!(find_timestamp_ms_in_str("08/Feb/2018:11:18:16 +0100", None).unwrap(), 1518085096000 as i64);
+    }
+
+    #[test]
+    fn case_extract_datetime() {
+        let syslog_payload = "Feb  8 06:30:01 plab /USR/SBIN/CRON[23569]: (root) CMD (  /usr/local/bin/fritzcron)";
+        assert_eq!(extract_datetime(&syslog_payload, "%b %e %H:%M:%S").unwrap(), "Feb  8 06:30:01".to_string());
+
+        let nginx_error_payload = "2018/02/08 08:28:27 [error] 398#0: *1150116 open() \"/var/www/default/ccvv\" failed (2: No such file or directory), client: 1.0.1.0, server: _, request: \"GET /ccvv HTTP/1.1\", host: \0.1.0.1\"";
+        assert_eq!(extract_datetime(&nginx_error_payload, "%Y/%m/%d %H:%M:%S").unwrap(), "2018/02/08 08:28:27".to_string());
+
+        let nginx_access_payload = "198.50.136.9 - - [08/Feb/2018:08:12:58 +0100] \"GET /w00tw00t.at.ISC.SANS.DFind:) HTTP/1.1\" 400 166 \"-\" \"-\"";
+        assert_eq!(extract_datetime(&nginx_access_payload, "%d/%b/%Y:%H:%M:%S %z").unwrap(), "08/Feb/2018:08:12:58 +0100".to_string());
+
+        let apache_error_payload = "[Thu Feb 08 14:32:52 2018] [error] [client 127.0.0.1] client denied by server configuration: /export/home/live/ap/htdocs/test";
+        assert_eq!(extract_datetime(&apache_error_payload, "%a %b %d %H:%M:%S %Y").unwrap(), "Thu Feb 08 14:32:52 2018".to_string());
     }
 }
