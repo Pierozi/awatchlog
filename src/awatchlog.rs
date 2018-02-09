@@ -61,12 +61,18 @@ use config::credentials;
 pub fn run(config_file: Option<String>, credentials_file: Option<String>) {
     let config: AwatchLogConfig = configuration::parse(config_file);
 
-    // TODO must auto detect region by using instance metadata
-    // use config::discovery::metadata
-
-    let region = match Region::from_str(&config.general.region) {
-        Ok(region) => region,
-        Err(_) => Region::UsEast1,
+    let region: Region = match config.general.region {
+        None => {
+            // TODO must auto detect region by using instance metadata
+            // use config::discovery::metadata
+            Region::UsEast1
+        },
+        Some(custom_region) => {
+            match Region::from_str(&custom_region) {
+                Ok(region) => region,
+                Err(_) => panic!("The region {} in configuration are not an expected AWS Region", custom_region),
+            }
+        },
     };
 
     // TODO check if pid already up

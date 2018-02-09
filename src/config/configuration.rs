@@ -41,7 +41,7 @@ const DEFAULT_CONFIG_PATH: &'static str = "/usr/share/awatchlog/config.toml";
 pub struct ConfigGeneral {
     pub pid_file: String,
     pub state_path: String,
-    pub region: String,
+    pub region: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -58,6 +58,12 @@ pub struct AwatchLogConfig {
     pub logfile: Vec<ConfigLogFile>,
 }
 
+/// Parse the agent configuration file in struct.
+///
+/// `parse` creates a new [`AwatchLogConfig`], and parse toml file to fill the struct.
+///
+/// [`String`]: configuration/struct.AwatchLogConfig.html
+///
 pub fn parse(file: Option<String>) -> AwatchLogConfig {
     let path: String = if let Some(file_path) = file {
         file_path
