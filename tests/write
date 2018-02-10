@@ -3,8 +3,8 @@
 file=$1
 
 for((;;)) do
-  date=`date +'%b %m %H:%M:%S'`
-  entropy=`openssl rand -base64 24`
+  date=`date +'%b %d %H:%M:%S' | sed 's/fév/Feb/'`
+  entropy=`openssl rand -hex 512`
   echo "$date : $entropy" >> $file
   sleep 2
 done

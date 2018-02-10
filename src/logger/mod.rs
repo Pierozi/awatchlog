@@ -56,6 +56,7 @@ use rusoto_logs::{
 
 const AWS_MAX_BATCH_SIZE: u64 = 788576; // 1048576 - (10000 * 26)
 const AWS_MAX_BATCH_EVENTS: u64 = 10000;
+const MIN_BUFFER_SIZE: u64 = 8092;
 
 pub fn watch(log_file: ConfigLogFile, client: &Box<CloudWatchLogs>) {
     println!("File: {}", log_file.file);
@@ -77,7 +78,7 @@ fn consumer(log_file: &ConfigLogFile, client: &Box<CloudWatchLogs>)
     let states_dir: Option<String> = None;
     let mut token: Option<String> = None;
     let mut offset: u64 = 0;
-    let mut buffer_size: u64 = 16384;
+    let mut buffer_size: u64 = MIN_BUFFER_SIZE;
 
     match state::load(log_file.file.to_owned(), states_dir.to_owned()) {
         Ok(state) => {
@@ -95,14 +96,17 @@ fn consumer(log_file: &ConfigLogFile, client: &Box<CloudWatchLogs>)
         let mut _offset: u64 = offset;
         let buf_size = buffer_size;
         let mut delay = Duration::new(5, 0);
+        println!("the offset are : {}", _offset);
         let content: String = read_file(&log_file.file, &mut _offset, buf_size);
 
         {
-            let delta: u64 = 256;
+            let delta: u64 = log_file.delta.unwrap_or(512 as u64);
             let content_size = content.len() as u64;
+            println!("the content size are : {}", content_size);
 
             // Wait and continue loop if message empty
             if 0 == content_size {
+                println!("Nothing to read at offset {}", offset);
                 sleep(delay);
                 continue;
             }
@@ -112,12 +116,16 @@ fn consumer(log_file: &ConfigLogFile, client: &Box<CloudWatchLogs>)
                 // Divide by 2 in order reduce drastically the size
                 // and re scale-up progressively if needs
                 buffer_size = buffer_size / 2;
+                // Ensure buffer size is not lower than MIN_BUFFER_SIZE
+                if buffer_size < MIN_BUFFER_SIZE {
+                    buffer_size = MIN_BUFFER_SIZE;
+                }
                 continue;
             }
 
-            // Reduce buffer size if lower than expected (because can be truncated)
-            if content_size < (buffer_size - delta) {
-                buffer_size = content_size - delta;
+            // Reduce buffer size if lower than expected (included delta because can be truncated)
+            if content_size > delta && content_size < (buffer_size - delta) {
+                buffer_size = content_size;
             } else {
                 // Otherwise increase buffer size by 50%
                 buffer_size = content_size * 150 / 100;
@@ -126,6 +134,11 @@ fn consumer(log_file: &ConfigLogFile, client: &Box<CloudWatchLogs>)
                 if AWS_MAX_BATCH_SIZE < buffer_size {
                     buffer_size = AWS_MAX_BATCH_SIZE;
                 }
+            }
+
+            // Ensure buffer size is not lower than MIN_BUFFER_SIZE
+            if buffer_size < MIN_BUFFER_SIZE {
+                buffer_size = MIN_BUFFER_SIZE;
             }
         }
 
@@ -230,7 +243,7 @@ fn read_file(file_name: &String, offset: &mut u64, buf_size: u64) -> String {
 
             /*println!("the size of content {} are : {}", path_display, n);
             println!("the size of content truncate {} are : {}", path_display, content.len());*/
-            println!("the offset are now at : {}", offset);
+            //println!("the offset are now at : {}", offset);
             //println!("The content of file are : {:?}", content);
 
             return content;
@@ -245,10 +258,6 @@ struct LogEventError {
     token: Option<String>
 }
 
-// We should / MUST use state file to persist the position with the latest
-// sequence_token to avoid duplication log or data loss if agent restart
-// And also maybe replace message by vector to reduce the HTTP call and
-// increase performance on high rate log stream.
 fn put_log_events(
     message: &String,
     log_file: &ConfigLogFile,
@@ -261,12 +270,12 @@ fn put_log_events(
         if line.is_empty() {
             continue;
         }
-        let custom_fmt: Option<String> = log_file.datetime_format.to_owned(); // TODO extract custom format from log_group config
+        let custom_fmt: Option<String> = log_file.datetime_format.to_owned();
         let tz_milliseconds = match find_timestamp_ms_in_str(line, custom_fmt) {
             None => {
+                //TODO WARNING IN LOGGER
                 let utc: DateTime<Utc> = Utc::now();
                 utc.timestamp() * 1000
-                //TODO WARNING IN LOGGER
             },
             Some(tz_ms) => tz_ms,
         };
@@ -280,6 +289,8 @@ fn put_log_events(
     if events.is_empty() {
         return Ok(LogEventResponse { token });
     }
+
+    println!("Batch lines: {}", events.len());
 
     let log_event_request: PutLogEventsRequest = PutLogEventsRequest {
         log_events: events,

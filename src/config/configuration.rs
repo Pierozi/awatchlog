@@ -50,6 +50,7 @@ pub struct ConfigLogFile {
     pub log_group_name: String,
     pub log_stream_name: String,
     pub datetime_format: Option<String>,
+    pub delta: Option<u64>,
 }
 
 #[derive(Deserialize)]

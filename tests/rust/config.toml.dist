@@ -8,9 +8,19 @@ file = "/var/log/my-app.log"
 log_group_name = "awatchlog/rust-agent.log"
 log_stream_name = "{instance_id}"
 datetime_format = "%b %d %H:%M:%S"
+delta = 1200
 
 [[logfile]]
 file = "/var/log/syslog.log"
 log_group_name = "awatchlog/rust-syslog.log"
 log_stream_name = "{instance_id}"
+datetime_format = "%b %d %H:%M:%S"
+delta = 128
+
+
+
+[[logfile]]
+file = "/home/pierozi/Project/github/pierozi/awatchlog/tests/rust/demo2.log"
+log_group_name = "awatchlog/demo2.log"
+log_stream_name = "pi5-58c2b6bb"
 datetime_format = "%b %d %H:%M:%S"
