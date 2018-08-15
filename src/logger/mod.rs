@@ -178,9 +178,10 @@ fn create_group(log_group_name: &String, client: &Box<CloudWatchLogs>) {
     let log_group_request: CreateLogGroupRequest = CreateLogGroupRequest {
         log_group_name: log_group_name.to_owned(),
         tags: None,
+        kms_key_id: None,
     };
 
-    let result = client.create_log_group(&log_group_request);
+    let result = client.create_log_group(log_group_request).sync();
 
     match result {
         //TODO find how to match only CreateLogStreamError::ResourceAlreadyExists
@@ -199,7 +200,7 @@ fn create_stream(
         log_stream_name: log_stream_name.to_owned(),
     };
 
-    let result = client.create_log_stream(&log_stream_request);
+    let result = client.create_log_stream(log_stream_request).sync();
 
     match result {
         Err(why) => println!("The creation of log stream have failed: {}", why.description()),
@@ -299,7 +300,7 @@ fn put_log_events(
         sequence_token: token,
     };
 
-    let result_log = client.put_log_events(&log_event_request);
+    let result_log = client.put_log_events(log_event_request).sync();
 
     return match result_log {
         Err(why) => {

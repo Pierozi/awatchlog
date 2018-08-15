@@ -38,6 +38,7 @@ extern crate chrono;
 extern crate shuteye;
 extern crate sha1;
 extern crate regex;
+extern crate hyper;
 
 extern crate rusoto_credential;
 extern crate rusoto_logs;
@@ -45,8 +46,7 @@ extern crate rusoto_core;
 
 use std::str::FromStr;
 use std::thread;
-use rusoto_credential::{DefaultCredentialsProvider};
-use rusoto_core::{default_tls_client, Region};
+use rusoto_core::{Region, DispatchSignedRequest, HttpClient};
 use rusoto_logs::{
     CloudWatchLogs,
     CloudWatchLogsClient,
@@ -99,19 +99,16 @@ pub fn run(config_file: Option<String>, credentials_file: Option<String>) {
 fn get_client(region: Region, credentials_file: Option<String>) -> Box<CloudWatchLogs> {
     return match credentials::parse(credentials_file) {
         None => {
-            let credentials = DefaultCredentialsProvider::new().unwrap();
-            Box::new(CloudWatchLogsClient::new(
-                default_tls_client().unwrap(),
-                credentials,
-                region
-            ))
+            Box::new(CloudWatchLogsClient::new(region))
         },
-        Some(credentials) => {
-            Box::new(CloudWatchLogsClient::new(
-                default_tls_client().unwrap(),
+        Some(_credentials) => {
+            Box::new(CloudWatchLogsClient::new(region))
+            /*let client = HttpClient::Future;
+            Box::new(CloudWatchLogsClient::new_with(
+                client,
                 credentials,
                 region
-            ))
+            ))*/
         },
     }
 }
