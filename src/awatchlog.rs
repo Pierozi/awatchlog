@@ -46,11 +46,12 @@ extern crate rusoto_core;
 
 use std::str::FromStr;
 use std::thread;
-use rusoto_core::{Region, DispatchSignedRequest, HttpClient};
+use rusoto_core::{Region};
 use rusoto_logs::{
     CloudWatchLogs,
     CloudWatchLogsClient,
 };
+use rusoto_core::request::HttpClient;
 
 mod logger;
 mod config;
@@ -102,13 +103,12 @@ fn get_client(region: Region, credentials_file: Option<String>) -> Box<CloudWatc
             Box::new(CloudWatchLogsClient::new(region))
         },
         Some(_credentials) => {
-            Box::new(CloudWatchLogsClient::new(region))
-            /*let client = HttpClient::Future;
+            let client = HttpClient::new().expect("failed to create request dispatcher");
             Box::new(CloudWatchLogsClient::new_with(
                 client,
-                credentials,
+                _credentials,
                 region
-            ))*/
+            ))
         },
     }
 }

@@ -8,9 +8,9 @@ include = ["src/**/*", "Cargo.toml"]
 publish = false
 
 [dependencies]
-rusoto_core = "0.33.0"
-rusoto_logs = "0.33.0"
-rusoto_credential = "0.12.0"
+rusoto_core = "0.34.0"
+rusoto_logs = "0.34.0"
+rusoto_credential = "0.13.0"
 chrono = "0.4.5"
 getopts = "0.2.18"
 toml = "~0.4.6"
